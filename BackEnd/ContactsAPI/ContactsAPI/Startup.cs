@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using ContactsAPI.Data;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpsPolicy;
@@ -11,6 +12,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi.Models;
+using Microsoft.EntityFrameworkCore;
+using ContactsAPI.Services;
+using ContactsAPI.Middleware;
+
 
 namespace ContactsAPI
 {
@@ -28,6 +33,21 @@ namespace ContactsAPI
         {
             services.AddControllers();
 
+            // Register the DbContext with an in-memory database
+            services.AddDbContext<ContactDbContext>(options =>
+                options.UseInMemoryDatabase("ContactsDb"));
+
+            services.AddScoped<IContactService, ContactService>();
+            // Add CORS services and allow only specific origins
+            services.AddCors(options =>
+            {
+                options.AddPolicy("AllowSpecificOrigin", builder =>
+                {
+                    builder.WithOrigins("http://localhost:3000")
+                        .AllowAnyMethod()
+                        .AllowAnyHeader();
+                });
+            });
             services.AddSwaggerGen(c =>
             {
                 c.SwaggerDoc("v1", new OpenApiInfo
@@ -53,6 +73,9 @@ namespace ContactsAPI
                 app.UseDeveloperExceptionPage();
             }
 
+            // Add the custom exception middleware
+            app.UseMiddleware<ExceptionMiddleware>();
+            
             app.UseSwagger();
 
             // Enable middleware to serve swagger-ui (HTML, JS, CSS, etc.),
@@ -65,8 +88,12 @@ namespace ContactsAPI
                 c.RoutePrefix = string.Empty;
             });
 
-            app.UseHttpsRedirection();
+            //commented out for local development
+            //app.UseHttpsRedirection();
 
+            // This ensures that only requests from the allowed origin (http://localhost:3000) are accepted.
+            app.UseCors("AllowSpecificOrigin");
+            
             app.UseRouting();
 
             app.UseAuthorization();
@@ -75,6 +102,14 @@ namespace ContactsAPI
             {
                 endpoints.MapControllers();
             });
+            
+            // Ensure the in-memory database is created and ready to use
+            // This ensures that the database is initialized with the seed data when the application starts.
+            using (var scope = app.ApplicationServices.CreateScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<ContactDbContext>();
+                context.Database.EnsureCreated(); // Ensures the database is created
+            }
         }
     }
 }
